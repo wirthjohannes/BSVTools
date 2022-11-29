@@ -65,10 +65,10 @@ def copyVerilog(src, dest, exclude):
             if not os.path.basename(path) in exclude:
                     flattenVerilogIncludes(path, dest)
         else:
-            verilogfiles = glob.glob(os.path.join(path, '*.v'))
-            sysverilogfiles = glob.glob(os.path.join(path, '*.sv'))
-            vhdlfiles = glob.glob(os.path.join(path, '*.vhd'))
-            headerfiles = glob.glob(os.path.join(path, '*.h'))
+            verilogfiles = glob.glob(os.path.join(path, '**/*.v'), recursive=True)
+            sysverilogfiles = glob.glob(os.path.join(path, '**/*.sv'), recursive=True)
+            vhdlfiles = glob.glob(os.path.join(path, '**/*.vhd'), recursive=True)
+            headerfiles = glob.glob(os.path.join(path, '**/*.h'), recursive=True)
             allfiles = verilogfiles + vhdlfiles + headerfiles + sysverilogfiles
             for filename in allfiles:
                 if not os.path.basename(filename) in exclude:

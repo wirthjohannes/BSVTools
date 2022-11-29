@@ -62,6 +62,9 @@ ifeq ($(SIM_TYPE), VERILOG)
 VERILOGDIR=verilog
 BASEPARAMS=-verilog -vdir $(BUILDDIR)/$(VERILOGDIR) -vsim modelsim
 BASEPARAMS_SIM=-verilog -vdir $(VERILOGDIR) -vsim modelsim
+ifneq ($(VERILOGDIR_SIM), )
+BASEPARAMS_SIM+=-vsearch $(VERILOGDIR_SIM)
+endif
 COMPILE_FLAGS=-fdir $(PWD) -simdir $(BUILDDIR) -bdir $(BUILDDIR) -info-dir $(BUILDDIR) -p $(LIBRARIES)
 COMPLETE_FLAGS=$(BASEPARAMS) $(COMPILE_FLAGS)
 USED_DIRECTORIES += $(BUILDDIR)/$(VERILOGDIR)
