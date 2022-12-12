@@ -59,17 +59,19 @@ def copyNGC(src, dest, exclude):
             if not os.path.basename(path) in exclude:
                     shutil.copy(path, dest)
 
-def copyVerilog(src, dest, exclude):
+def copyVerilog(src, dest, exclude, recursive):
     for path in src:
         if path.endswith('.v') or path.endswith('.vhd') or path.endswith('.h') or path.endswith('.sv'):
             if not os.path.basename(path) in exclude:
                     flattenVerilogIncludes(path, dest)
         else:
-            verilogfiles = glob.glob(os.path.join(path, '**/*.v'), recursive=True)
-            sysverilogfiles = glob.glob(os.path.join(path, '**/*.sv'), recursive=True)
-            vhdlfiles = glob.glob(os.path.join(path, '**/*.vhd'), recursive=True)
-            headerfiles = glob.glob(os.path.join(path, '**/*.h'), recursive=True)
-            allfiles = verilogfiles + vhdlfiles + headerfiles + sysverilogfiles
+            pattern = '**/' if recursive else ''
+            verilogfiles = glob.glob(os.path.join(path, pattern + '*.v'), recursive=recursive)
+            sysverilogfiles = glob.glob(os.path.join(path, pattern + '*.sv'), recursive=recursive)
+            sysverilogheaderfiles = glob.glob(os.path.join(path, pattern + '*.svh'), recursive=recursive)
+            vhdlfiles = glob.glob(os.path.join(path, pattern + '*.vhd'), recursive=recursive)
+            headerfiles = glob.glob(os.path.join(path, pattern + '*.h'), recursive=recursive)
+            allfiles = verilogfiles + vhdlfiles + headerfiles + sysverilogfiles + sysverilogheaderfiles
             for filename in allfiles:
                 if not os.path.basename(filename) in exclude:
                     flattenVerilogIncludes(filename, dest)
@@ -194,10 +196,9 @@ def mkVivado(cli):
 
     if not os.path.exists(tmpdir):
         os.makedirs(tmpdir)
-
-    copyVerilog(cli.verilog_dir, srcpath, cli.exclude)
+    copyVerilog(cli.verilog_dir, srcpath, cli.exclude, True)
     if cli.includes:
-        copyVerilog(cli.includes, inclpath, cli.exclude)
+        copyVerilog(cli.includes, inclpath, cli.exclude, False)
     copyNGC(cli.verilog_dir, srcpath, cli.exclude)
     copyBSVVerilog(cli.bluespec_dir, srcpath)
     additional = "\n".join(cli.additional)
