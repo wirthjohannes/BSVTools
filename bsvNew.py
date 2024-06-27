@@ -2,6 +2,7 @@
 
 import argparse, os, sys
 from bsvAdd import create_machine_file
+from scripts.bsvInterfaceBuilder import create_interfaces, list_available_interfaces
 
 def dir_path(string):
     if os.path.isdir(string):
@@ -22,10 +23,26 @@ def is_legal_name(project_name):
     else:
         return True
 
-def create_directories(path):
+def create_directories(path, test_dir):
     print("Creating base directories.")
     os.mkdir("{}/src".format(path))
+    if test_dir:
+        os.mkdir("{}/test".format(path))
     os.mkdir("{}/libraries".format(path))
+
+def create_libraries(path, lib_urls):
+    print("Fetching dependencies...")
+    for lib in lib_urls:
+        os.system("git -C {}/libraries clone {}".format(path, lib))
+
+def bsvLineJoin(indent_count, lines, default = ""):
+    if len(lines) == 0:
+        return default
+    indent = ""
+    for i in range(indent_count):
+        indent += "    "
+    lines = ["{}{}".format(indent, l) for l in lines]
+    return "\n".join(lines)
 
 makefile_temp = """###
 # DO NOT CHANGE
@@ -34,7 +51,8 @@ TOP_MODULE=mk{0}
 TESTBENCH_MODULE=mkTestbench
 IGNORE_MODULES=mkTestbench mkTestsMainTest
 MAIN_MODULE={0}
-TESTBENCH_FILE=src/Testbench.bsv
+TESTBENCH_FILE={1}/Testbench.bsv
+{2}
 
 # Initialize
 -include .bsv_tools
@@ -55,7 +73,7 @@ endif
 
 # Default flags
 EXTRA_FLAGS=-D "RUN_TEST=$(RUN_TEST)" -D "TESTNAME=mk$(RUN_TEST)"
-EXTRA_FLAGS+=-show-schedule -D "BSV_TIMESCALE=1ns/1ps -keep-fires"
+EXTRA_FLAGS+=-show-schedule -keep-fires -D "BSV_TIMESCALE=1ns/1ps"
 
 ###
 # User configuration
@@ -92,10 +110,12 @@ endif
 include $(BSV_TOOLS)/scripts/rules.mk
 """
 
-def create_makefile(path, project_name):
+def create_makefile(path, project_name, test_dir):
     print("Creating makefile")
+    dir = 'src' if not test_dir else 'test'
+    test_var = '' if not test_dir else 'TEST_DIR=$(PWD)/test'
     with open("{}/Makefile".format(path), "w") as f:
-        f.write(makefile_temp.format(project_name, os.path.abspath(os.path.dirname(__file__))))
+        f.write(makefile_temp.format(project_name, dir, test_var))
 
 gitignore = """.deps
 .bsv_tools
@@ -107,17 +127,26 @@ def create_gitignore(path):
     with open("{}/.gitignore".format(path), "w") as f:
         f.write(gitignore)
 
-top_module_temp = """package {0};
+top_module_temp = """package {name};
 
-interface {0};
-// Add custom interface definitions
+{imports}
+
+interface {name};
+{interface}
 endinterface
 
-module mk{0}({0});
+{typedefs}
+
+module mk{name}({name});
+{module_inst}
 
     rule doNothing;
         $display("Hello World!");
     endrule
+
+{rules}
+
+{interface_connections}
 
 endmodule
 
@@ -169,19 +198,26 @@ endpackage
 testmain_temp = """package TestsMainTest;
     import StmtFSM :: *;
     import TestHelper :: *;
-    import {0} :: *;
+{imports}
+    import {name} :: *;
 
     (* synthesize *)
-    module [Module] mkTestsMainTest(TestHandler);
+    module [Module] mkTestsMainTest(TestHelper::TestHandler);
 
-        {0} dut <- mk{0}();
+        {name} dut <- mk{name}();
+{module_inst}
+
+{connections}
 
         Stmt s = {{
             seq
                 $display("Hello World from the testbench.");
+{dut_init}
             endseq
         }};
         FSM testFSM <- mkFSM(s);
+
+{rules}
 
         method Action go();
             testFSM.start();
@@ -195,24 +231,43 @@ testmain_temp = """package TestsMainTest;
 endpackage
 """
 
-def create_base_src(path, project_name):
+def create_base_src(path, project_name, test_dir, intfs):
     print("Creating main module")
     with open("{}/src/{}.bsv".format(path, project_name), "w") as f:
-        f.write(top_module_temp.format(project_name))
+        f.write(top_module_temp.format(
+            name = project_name,
+            imports = bsvLineJoin(0, intfs.rtl_imports, "// Add imports"),
+            interface = bsvLineJoin(1, intfs.rtl_interface_def, "// Add custom interface definitions"),
+            typedefs = bsvLineJoin(0, intfs.rtl_typedefs),
+            module_inst = bsvLineJoin(1, intfs.rtl_module_inst),
+            rules = bsvLineJoin(1, intfs.rtl_rules),
+            interface_connections = bsvLineJoin(1, intfs.rtl_interface_connections)
+        ))
+        
+    dir = 'src' if not test_dir else 'test'
 
-    with open("{}/src/Testbench.bsv".format(path), "w") as f:
+    with open("{}/{}/Testbench.bsv".format(path, dir), "w") as f:
         f.write(testbench_temp)
 
-    with open("{}/src/TestsMainTest.bsv".format(path), "w") as f:
-        f.write(testmain_temp.format(project_name))
+    with open("{}/{}/TestsMainTest.bsv".format(path, dir), "w") as f:
+        f.write(testmain_temp.format(
+            name = project_name,
+            imports = bsvLineJoin(1, intfs.dut_imports),
+            module_inst = bsvLineJoin(2, intfs.dut_instances),
+            connections = bsvLineJoin(2, intfs.dut_connections),
+            dut_init = bsvLineJoin(4, intfs.dut_init),
+            rules = bsvLineJoin(2, intfs.dut_rules),
+        ))
 
-    with open("{}/src/TestHelper.bsv".format(path), "w") as f:
+    with open("{}/{}/TestHelper.bsv".format(path, dir), "w") as f:
         f.write(testhelper_temp)
 
 def main():
     parser = argparse.ArgumentParser(description="Create a new BSV project")
     parser.add_argument('--path', type=dir_path, default='./')
     parser.add_argument('project_name')
+    parser.add_argument('--test_dir', help='Set in case you want to separate in src and test folder', action='store_true')
+    parser.add_argument('--interfaces', help='Add interfaces to the BSV module (supported interfaces are "{}")'.format('", "'.join(list_available_interfaces())), nargs='+')
 
     args = None
     try:
@@ -220,7 +275,7 @@ def main():
     except NotADirectoryError as e:
         print("Path has to be a valid directory, got: {}.".format(e))
         sys.exit(1)
-
+    
     if not is_dir_empty(args.path):
         print("Directory {} is not empty. Please run this script in an empty directory.".format(args.path))
         sys.exit(1)
@@ -233,11 +288,14 @@ def main():
         print("Project name needs to NOT have '-' in the name ant NOT be any special keyword. \nPlease chose a different name")
         sys.exit(1)
 
-    create_directories(args.path)
+    intfs = create_interfaces(args.interfaces)
+
+    create_directories(args.path, args.test_dir)
+    create_libraries(args.path, intfs.libraries)
     create_machine_file(args.path)
     create_gitignore(args.path)
-    create_makefile(args.path, args.project_name)
-    create_base_src(args.path, args.project_name)
+    create_makefile(args.path, args.project_name, args.test_dir)
+    create_base_src(args.path, args.project_name, args.test_dir, intfs)
 
 if __name__ == "__main__":
     main()

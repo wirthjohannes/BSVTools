@@ -32,7 +32,7 @@ EMPTY :=
 SPACE := $(EMPTY) $(EMPTY)
 join-with = $(subst $(SPACE),$1,$(strip $2))
 
-LIBRARIES_BASE = %/Libraries $(SRCDIR) $(EXTRA_BSV_LIBS) $(BSV_INCLUDEDIR)
+LIBRARIES_BASE = %/Libraries $(SRCDIR) $(TEST_DIR) $(EXTRA_BSV_LIBS) $(BSV_INCLUDEDIR)
 LIBRARIES=$(call join-with,:,$(LIBRARIES_BASE))
 
 CXXFLAGS:=$(CXXFLAGS_EXTRA)
@@ -97,12 +97,6 @@ ifneq (, $(ZIP))
 	$(SILENTCMD)cd $(BUILDDIR)/ip && $(ZIP) -r $(PROJECT_NAME).zip $(PROJECT_NAME)
 endif
 
-up_ip: compile_top
-	@echo "Updating IP $(PROJECT_NAME)"
-	$(SILENTCMD)cd $(BUILDDIR); $(BSV_TOOLS_PY) . upVivado $(PROJECT_NAME) $(TOP_MODULE) $(EXCLUDED_VIVADO) $(VIVADO_ADD_PARAMS)
-
-sim_ip: compile_top
-
 compile_top: $(BUILDDIR)/bsc_defines | directories
 	$(SILENTCMD)$(BSV) -elab -verilog $(COMPLETE_FLAGS) $(BSC_FLAGS) -g $(TOP_MODULE) -u $(SRCDIR)/$(MAIN_MODULE).bsv
 
@@ -114,7 +108,10 @@ COMPLETE_FLAGS=$(BASEPARAMS) $(COMPILE_FLAGS)
 endif
 
 SRCS=$(wildcard $(SRCDIR)/*.bsv)
-$(shell $(BSV_DEPS) $(SRCDIR) $(BUILDDIR) $(RUN_TEST) > .deps)
+ifdef TEST_DIR
+SRCS+=$(wildcard $(TEST_DIR)/*.bsv)
+endif
+$(shell $(BSV_DEPS) $(SRCDIR) $(TEST_DIR) $(BUILDDIR) $(RUN_TEST) > .deps)
 include .deps
 
 $(USED_DIRECTORIES):
